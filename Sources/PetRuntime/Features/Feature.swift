@@ -28,7 +28,9 @@ let featureRegistry: [String: () -> PetFeature] = [
 /// 패널: 기능이 하나면 그대로, 여러 개면 탭으로
 struct FeaturesPanel: View {
     let features: [PetFeature]
-    @State private var tab = 0
+    // 확인용 인자 --panel-tab N : 패널을 N번째 탭으로 연다
+    @State private var tab = CommandLine.arguments.firstIndex(of: "--panel-tab")
+        .flatMap { i in CommandLine.arguments.indices.contains(i + 1) ? Int(CommandLine.arguments[i + 1]) : nil } ?? 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -39,9 +41,14 @@ struct FeaturesPanel: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .padding(.horizontal, 14).padding(.top, 12)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)      // 탭 버튼은 어떤 기능 화면에서도 밀려나지 않게
             }
             if features.indices.contains(tab) {
+                // 기능 화면은 남은 공간 안에서만 그린다 (넘치면 잘림, 탭을 밀어내지 않음)
                 features[tab].makePanel()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .clipped()
                     .id(tab)
             }
         }

@@ -125,6 +125,6 @@ struct AIUsagePanelView: View {
             }
         }
         .padding(14)
-        .frame(width: 340, height: 500)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)   // 패널 크기는 FeaturesPanel 이 정함
     }
 }
