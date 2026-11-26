@@ -16,6 +16,15 @@ protocol PetFeature: AnyObject {
     func takeAttention() -> String?
     /// 클릭하면 열리는 패널 화면
     func makePanel() -> AnyView
+    /// 머리 위 알림 말풍선(❗)에 띄울 짧은 글 — 예: 확인 안 한 개수 "3", 남은 양 "5%". 없으면 nil. (선택)
+    var badge: String? { get }
+    /// 패널을 열었을 때 불림 — 「확인했음」 처리해서 badge 를 지우는 곳. (선택)
+    func markSeen()
+}
+
+extension PetFeature {
+    var badge: String? { nil }
+    func markSeen() {}
 }
 
 /// 기능 목록: 이름 → 만드는 방법. 새 기능을 만들면 여기에 한 줄 추가한다.

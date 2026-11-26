@@ -55,9 +55,12 @@ final class MailModel: ObservableObject {
     @Published var account: String?
     @Published var note: String?
     @Published var loading = false
-    var seen = Set<String>()
+    var seen = Set<String>()      // 패널에서 확인한 메일 (❗ 숫자 기준)
+    var told = Set<String>()      // 말풍선으로 이미 알린 메일
     var first = true
-    var fresh: [MailItem] = []    // 지난번 확인 뒤 새로 온 메일
+    var fresh: [MailItem] = []    // 아직 말풍선으로 안 알린 새 메일
+    /// 패널을 마지막으로 연 뒤 새로 온 메일 수
+    @Published var newCount = 0
     private let q = DispatchQueue(label: "desktoppet.gmail", qos: .utility)
 
     func refresh() {
@@ -67,8 +70,11 @@ final class MailModel: ObservableObject {
             DispatchQueue.main.async {
                 self.loading = false
                 self.items = r.items; self.unread = r.unread; self.account = r.account; self.note = r.note
-                if self.first { self.seen = Set(r.items.map { $0.id }); self.first = false }
-                self.fresh = r.items.filter { !self.seen.contains($0.id) }
+                guard r.note == nil else { return }   // 읽기 실패면 새 메일 계산을 건드리지 않음
+                let ids = Set(r.items.map { $0.id })
+                if self.first { self.seen = ids; self.told = ids; self.first = false }
+                self.fresh = r.items.filter { !self.told.contains($0.id) }
+                self.newCount = ids.subtracting(self.seen).count
             }
         }
     }
@@ -135,13 +141,21 @@ final class GmailFeature: PetFeature {
 
     func takeAttention() -> String? {
         guard let m = model.fresh.first else { return nil }
-        model.seen.formUnion(model.fresh.map { $0.id })
+        model.told.formUnion(model.fresh.map { $0.id })
         let more = model.fresh.count > 1 ? " 외 \(model.fresh.count - 1)통" : ""
         model.fresh = []
         return "새 메일: \(m.from)\(more)"
     }
 
     func makePanel() -> AnyView { AnyView(MailPanel(model: model)) }
+
+    /// ❗ 확인 안 한 새 메일 수
+    var badge: String? { model.newCount > 0 ? "\(model.newCount)" : nil }
+    func markSeen() {
+        model.seen.formUnion(model.items.map { $0.id })
+        model.told.formUnion(model.items.map { $0.id })
+        model.newCount = 0
+    }
 }
 
 struct MailPanel: View {

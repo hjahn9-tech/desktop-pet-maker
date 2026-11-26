@@ -282,6 +282,11 @@ final class AIUsageStore: ObservableObject {
     private var lastClaude: ServiceUsage?
 
     var anyBusy: Bool { sessions.contains { $0.busy == true } }
+    /// Claude Code 잔여율 중 가장 낮은 값 (5시간·주간 중 먼저 바닥나는 쪽)
+    var claudeLowestRemaining: Double? {
+        usages.first { $0.id == "Claude Code" }?.windows.map { $0.remaining }.min()
+    }
+
     /// 서비스별 주간 잔여율 중 가장 낮은 값
     var lowestWeeklyRemaining: Double? {
         usages.flatMap { $0.windows }.filter { $0.label.hasPrefix("주간") }.map { $0.remaining }.min()

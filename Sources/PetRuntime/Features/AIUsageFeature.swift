@@ -29,4 +29,11 @@ final class AIUsageFeature: PetFeature {
     }
 
     func makePanel() -> AnyView { AnyView(AIUsagePanelView(store: store)) }
+
+    /// ❗ Claude 사용량이 이만큼 이하로 남으면 남은 % 를 띄운다 (5% → 4% → … → 0%)
+    static let badgeThreshold = 5.0
+    var badge: String? {
+        guard let r = store.claudeLowestRemaining, r <= Self.badgeThreshold else { return nil }
+        return "\(Int(r.rounded(.down)))%"
+    }
 }

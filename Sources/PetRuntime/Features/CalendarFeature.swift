@@ -17,6 +17,10 @@ struct DayEvent: Identifiable {
 final class CalendarModel: ObservableObject {
     @Published var events: [DayEvent] = []
     @Published var denied = false
+    /// 패널을 마지막으로 연 뒤 새로 생긴 오늘 일정 수
+    @Published var newCount = 0
+    private var seenIDs = Set<String>()
+    private var baselineDay: Date?
     let ek = EKEventStore()
     private var asked = false
 
@@ -40,13 +44,26 @@ final class CalendarModel: ObservableObject {
         events = ek.events(matching: ek.predicateForEvents(withStart: start, end: end, calendars: nil))
             .filter { $0.status != .canceled }
             .map { e in
-                DayEvent(id: (e.eventIdentifier ?? UUID().uuidString) + "\(e.startDate.timeIntervalSince1970)",
+                DayEvent(id: (e.eventIdentifier ?? (e.title ?? "")) + "\(e.startDate.timeIntervalSince1970)",
                          title: e.title?.isEmpty == false ? e.title! : "(제목 없음)",
                          start: e.startDate, end: e.endDate, allDay: e.isAllDay,
                          location: e.location?.isEmpty == false ? e.location : nil,
                          calendar: e.calendar.title, color: Color(nsColor: e.calendar.color ?? .systemBlue))
             }
             .sorted { ($0.allDay ? 0 : 1, $0.start) < ($1.allDay ? 0 : 1, $1.start) }
+        // 처음 읽은 목록·날짜가 바뀐 뒤 처음 읽은 목록은 기준으로 삼고 세지 않는다
+        let ids = Set(events.map { $0.id })
+        let today = Calendar.current.startOfDay(for: Date())
+        if baselineDay != today {
+            baselineDay = today
+            seenIDs = ids
+        }
+        newCount = ids.subtracting(seenIDs).count
+    }
+
+    func markSeen() {
+        seenIDs.formUnion(events.map { $0.id })
+        newCount = 0
     }
 }
 
@@ -73,6 +90,10 @@ final class CalendarFeature: PetFeature {
     }
 
     func makePanel() -> AnyView { AnyView(CalendarPanel(model: model)) }
+
+    /// ❗ 확인 안 한 새 일정 수
+    var badge: String? { model.newCount > 0 ? "\(model.newCount)" : nil }
+    func markSeen() { model.markSeen() }
 }
 
 struct CalendarPanel: View {

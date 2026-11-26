@@ -175,6 +175,85 @@ final class Bubble {
     }
 }
 
+// MARK: - 알림 말풍선 (❗ + 숫자)
+
+struct BadgeView: View {
+    let text: String
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text("!")
+                    .font(.system(size: 12, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 17, height: 17)
+                    .background(Circle().fill(Color(red: 0.93, green: 0.23, blue: 0.27)))
+                Text(text)
+                    .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                    .foregroundStyle(Color.black.opacity(0.85))
+            }
+            .padding(.leading, 5).padding(.trailing, 8).padding(.vertical, 4)
+            .background(Capsule().fill(Color.white))
+            .overlay(Capsule().stroke(Color.black.opacity(0.25), lineWidth: 1))
+            Triangle().fill(Color.white).frame(width: 10, height: 6).offset(y: -1)   // 말풍선 꼬리
+        }
+        .padding(2)
+        .fixedSize()
+    }
+}
+
+struct Triangle: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+final class BadgeHost: NSHostingView<BadgeView> {
+    var onClick: () -> Void = {}
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseUp(with event: NSEvent) { onClick() }
+}
+
+/// 머리 위에 떠 있는 알림 말풍선. 누르면 다마고치를 누른 것과 같다.
+final class Badge {
+    let window: NSPanel
+    private(set) var text: String?
+    var onClick: () -> Void = {}
+
+    init() {
+        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.level = .statusBar
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        window.hidesOnDeactivate = false
+    }
+
+    /// text 가 nil 이면 숨김. anchor = 말풍선 꼬리가 가리킬 지점
+    func update(_ t: String?, anchor: NSPoint) {
+        guard let t = t else {
+            if window.isVisible { window.orderOut(nil) }
+            text = nil
+            return
+        }
+        if t != text {
+            text = t
+            let host = BadgeHost(rootView: BadgeView(text: t))
+            host.onClick = { [weak self] in self?.onClick() }
+            window.contentView = host
+            window.setContentSize(host.fittingSize)
+        }
+        let s = window.frame.size
+        window.setFrameOrigin(NSPoint(x: (anchor.x - s.width / 2).rounded(), y: anchor.y.rounded()))
+        if !window.isVisible { window.orderFrontRegardless() }
+    }
+}
+
 // MARK: - 다마고치
 
 final class Pet {
@@ -192,6 +271,8 @@ final class Pet {
     var dragging = false
     var features: [PetFeature] = []
     let popover = NSPopover()
+    let badge = Badge()
+    private var lastBadge: String?
 
     var size: CGFloat { CGFloat(cfg.displaySize * Prefs.sizeFactor) }
     var screen: NSRect { (window.screen ?? NSScreen.main ?? NSScreen.screens[0]).visibleFrame }
@@ -211,6 +292,7 @@ final class Pet {
         view = PetView(frame: NSRect(x: 0, y: 0, width: sz, height: sz), smooth: cfg.smooth)
         window.contentView = view
         view.onClick = { [weak self] in self?.clicked() }
+        badge.onClick = { [weak self] in self?.clicked() }
         view.onDrag = { [weak self] nx in self?.dragging = true; self?.x = nx; self?.place() }
         view.onDragEnd = { [weak self] in self?.dragging = false; self?.set(.idle, 0.6) }
         x = screen.minX + screen.width * CGFloat.random(in: 0.2...0.8)
@@ -251,8 +333,8 @@ final class Pet {
             if let m = cfg.messages.filter({ !$0.isEmpty }).randomElement() { bubble.say(m, above: window.frame) }
             return
         }
-        // 기능이 있으면 패널을 연다
-        features.forEach { $0.refresh() }
+        // 기능이 있으면 패널을 연다 (열면 「확인했음」 → ❗ 말풍선 지움)
+        features.forEach { $0.refresh(); $0.markSeen() }
         if popover.contentViewController == nil {
             popover.behavior = .transient
             popover.contentSize = NSSize(width: 340, height: 480)
@@ -268,8 +350,19 @@ final class Pet {
         bubble.say(text, above: window.frame)
     }
 
+    /// 기능들의 ❗ 알림을 모아 머리 위에 띄운다. 새로 뜨거나 바뀌면 폴짝 뛴다.
+    func updateBadge() {
+        let parts = features.compactMap { $0.badge }
+        let t = parts.isEmpty ? nil : parts.joined(separator: " · ")
+        if let t = t, t != lastBadge, !dragging { set(.happy, 1.4) }
+        lastBadge = t
+        let head: CGFloat = anim == .sleep ? 0.62 : 0.82     // 잘 때는 납작해서 낮게
+        badge.update(t, anchor: NSPoint(x: x + size / 2, y: screen.minY + size * head))
+    }
+
     func tick(dt: Double, working: Bool, justStopped: Bool) {
         bubble.tick()
+        updateBadge()
         let reacting = anim == .happy && Date() < until
         if dragging || reacting || popover.isShown {
             // 반응·드래그 중에는 그대로
@@ -337,6 +430,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         buildMenu()
+        if CommandLine.arguments.contains("--badge-demo") {   // 확인용: ❗ 말풍선 모양 미리보기
+            pet.features.append(DemoBadgeFeature())
+        }
         if CommandLine.arguments.contains("--open-panel") {   // 확인용: 시작 3초 뒤 클릭한 것처럼
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.pet.clicked() }
         }
@@ -427,3 +523,14 @@ let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
+
+/// 확인용(--badge-demo): 항상 ❗ 3 을 띄우는 가짜 기능
+final class DemoBadgeFeature: PetFeature {
+    static let id = "demo-badge"
+    let title = "데모"
+    let refreshInterval: TimeInterval = 3600
+    func refresh() {}
+    func takeAttention() -> String? { nil }
+    func makePanel() -> AnyView { AnyView(Text("❗ 말풍선 데모").padding()) }
+    var badge: String? { "3" }
+}
